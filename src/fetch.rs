@@ -3,7 +3,7 @@ use crate::registry::{registry_path, registry_path_from_url};
 use crate::{Dependency, Manifest};
 use env_proxy;
 use regex::Regex;
-use reqwest;
+use ureq;
 use semver;
 use std::env;
 use std::io::{Read, Write};
@@ -376,25 +376,32 @@ const fn get_default_timeout() -> Duration {
     Duration::from_secs(10)
 }
 
-fn get_with_timeout(url: &str, timeout: Duration) -> reqwest::Result<reqwest::blocking::Response> {
-    let client = reqwest::blocking::ClientBuilder::new()
-        .timeout(timeout)
-        .proxy(reqwest::Proxy::custom(|url| {
-            env_proxy::for_url(url).to_url()
-        }))
-        .build()?;
+fn get_with_timeout(url: &str, timeout: Duration) -> Result<ureq::Response> {
+    let proxy_url = env_proxy::for_url_str(url).to_url();
+    let proxy = proxy_url.map(| url | ureq::Proxy::new(url));
+    if let Some(Err(proxy_err)) = proxy {
+        return Err(proxy_err.into());
+    }
 
-    client
-        .get(url)
-        .send()
-        .and_then(reqwest::blocking::Response::error_for_status)
+    let resp = ureq::get(url)
+        .timeout_connect(timeout.as_millis() as u64)
+        .timeout_read(timeout.as_millis() as u64)
+        .timeout_write(timeout.as_millis() as u64)
+        .call();
+
+    if resp.status() >= 400 {
+        return Err(Error::from(ErrorKind::FetchError(resp.status(), resp.status_text().into())));
+    }
+
+    return Ok(resp)
 }
 
 fn get_cargo_toml_from_git_url(url: &str) -> Result<String> {
     let mut res = get_with_timeout(url, get_default_timeout())
         .chain_err(|| "Failed to fetch crate from git")?;
     let mut body = String::new();
-    res.read_to_string(&mut body)
+    res.into_reader()
+        .read_to_string(&mut body)
         .chain_err(|| "Git response not a valid `String`")?;
     Ok(body)
 }

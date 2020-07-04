@@ -3,6 +3,7 @@ error_chain! {
         Io(::std::io::Error) #[doc = "An error from the std::io module"];
         Git(::git2::Error)#[doc = "An error from the git2 crate"];
         CargoMetadata(::failure::Compat<::cargo_metadata::Error>)#[doc = "An error from the cargo_metadata crate"];
+        Ureq(::ureq::Error)#[doc = "An error from the ureq crate"];
     }
 
     errors {
@@ -74,6 +75,11 @@ error_chain! {
         ParseVersion(version: String, dep: String) {
             description("Failed to parse a version for a dependency")
             display("The version `{}` for the dependency `{}` couldn't be parsed", version, dep)
+        }
+        /// Failed to fetch something using http (ureq)
+        FetchError(http_status: u16, status: String) {
+            description("HTTP request failed")
+            display("Request failed: {} {}", http_status, status)
         }
     }
 }
